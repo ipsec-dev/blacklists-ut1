@@ -27,7 +27,9 @@ jobs:
         mkdir upload
         for dir in blacklists/*; do
           if [ -d "$dir" ] && [ -f "$dir/domains" ]; then
-            cp "$dir/domains" "upload/$(basename "$dir")"
+            base=$(basename "$dir")
+            cp "$dir/domains" "upload/$base"
+            awk '{print "0.0.0.0 "$0}' "$dir/domains" > "upload/0-$base"
           fi
         done
 
