@@ -1,0 +1,45 @@
+name: Sync Blacklist
+
+on:
+  workflow_dispatch:
+
+jobs:
+  upload-blacklists:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install required tools
+      run: sudo apt-get update && sudo apt-get install -y wget tar
+
+    - name: Download blacklist archive
+      run: wget -O blacklists.tar.gz https://dsi.ut-capitole.fr/blacklists/download/blacklists.tar.gz
+
+    - name: Extract archive
+      run: |
+        mkdir -p blacklists
+        tar -xzf blacklists.tar.gz -C blacklists --strip-components=1
+
+    - name: Flatten and rename domains files
+      run: |
+        mkdir upload
+        for dir in blacklists/*; do
+          if [ -d "$dir" ] && [ -f "$dir/domains" ]; then
+            cp "$dir/domains" "upload/$(basename "$dir")"
+          fi
+        done
+
+    - name: Generate release tag
+      id: tag
+      run: echo "TAG=blacklists-latest" >> $GITHUB_ENV
+
+    - name: Create GitHub Release and Upload Blacklist Files
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ env.TAG }}
+        name: "Blacklist Update ${{ env.TAG }}"
+        files: upload/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
