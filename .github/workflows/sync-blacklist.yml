@@ -12,6 +12,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Install required tools
       run: sudo apt-get update && sudo apt-get install -y wget tar
@@ -26,7 +28,7 @@ jobs:
 
     - name: Flatten and rename domains files
       run: |
-        mkdir upload
+        mkdir -p upload
         for dir in blacklists/*; do
           if [ -d "$dir" ] && [ -f "$dir/domains" ]; then
             base=$(basename "$dir")
@@ -34,6 +36,23 @@ jobs:
             awk '{print "0.0.0.0 "$0}' "$dir/domains" > "upload/0-$base"
           fi
         done
+
+    - name: Write update timestamp
+      run: echo "Last updated: $(date -u '+%Y-%m-%d %H:%M:%SZ')" > last_updated.txt
+
+    - name: Commit and push update timestamp
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add last_updated.txt
+        if ! git diff --cached --quiet; then
+          git commit -m "Update sync timestamp: $(date +'%Y-%m-%d')"
+          git push origin HEAD
+        else
+          echo "No changes to commit"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Generate release tag
       id: tag
