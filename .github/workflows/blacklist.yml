@@ -38,7 +38,8 @@ jobs:
         done
 
     - name: Write update timestamp
-      run: echo "Last updated: $(date -u '+%Y-%m-%d %H:%M:%SZ')" > last_updated.txt
+      run: |
+        echo "Last updated: $(date -u '+%Y-%m-%d %H:%M:%SZ')" > last_updated.txt
 
     - name: Commit and push update timestamp
       run: |
