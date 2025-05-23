@@ -71,10 +71,8 @@ jobs:
             
             echo "Processing category: $category"
             
-            # Clean and validate domains before processing
-            grep -v '^#\|^$\|^\s*$' "$domains_file" | \
-            grep -E '^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$' | \
-            sort -u > "upload/$category"
+            # Simple processing - remove only comment lines and sort
+            grep -v '^#' "$domains_file" | sort -u > "upload/$category"
             
             # Create hosts format version
             awk '{print "0.0.0.0 " $0}' "upload/$category" > "upload/hosts-$category"
