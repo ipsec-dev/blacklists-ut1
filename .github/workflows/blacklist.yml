@@ -2,68 +2,242 @@ name: Sync Blacklist
 
 on:
   schedule:
-    - cron: '0 0 * * 0' # Every Sunday at midnight
+    - cron: '0 0 * * 0'  # Every Sunday at midnight UTC
   workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Force update even if no changes detected'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  BLACKLIST_URL: https://dsi.ut-capitole.fr/blacklists/download/blacklists.tar.gz
+  RELEASE_TAG: blacklists-latest
 
 jobs:
-  upload-blacklists:
+  sync-blacklists:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
+      
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0  # Fetch full history for better diff detection
 
-    - name: Install required tools
-      run: sudo apt-get update && sudo apt-get install -y wget tar
-
-    - name: Download blacklist archive
-      run: wget -O blacklists.tar.gz https://dsi.ut-capitole.fr/blacklists/download/blacklists.tar.gz
-
-    - name: Extract archive
+    - name: Setup workspace
       run: |
-        mkdir -p blacklists
-        tar -xzf blacklists.tar.gz -C blacklists --strip-components=1
+        mkdir -p {blacklists,upload,temp}
+        echo "TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%SZ')" >> $GITHUB_ENV
+        echo "DATE_TAG=$(date -u '+%Y%m%d')" >> $GITHUB_ENV
 
-    - name: Flatten and rename domains files
+    - name: Download and verify blacklist archive
       run: |
-        mkdir -p upload
-        for dir in blacklists/*; do
-          if [ -d "$dir" ] && [ -f "$dir/domains" ]; then
-            base=$(basename "$dir")
-            cp "$dir/domains" "upload/$base"
-            awk '{print "0.0.0.0 "$0}' "$dir/domains" > "upload/0-$base"
+        echo "Downloading blacklist archive..."
+        if ! wget --timeout=30 --tries=3 -O temp/blacklists.tar.gz "$BLACKLIST_URL"; then
+          echo "❌ Failed to download blacklist archive"
+          exit 1
+        fi
+        
+        # Verify the archive is valid
+        if ! tar -tzf temp/blacklists.tar.gz >/dev/null 2>&1; then
+          echo "❌ Downloaded archive is corrupted"
+          exit 1
+        fi
+        
+        echo "✅ Archive downloaded and verified successfully"
+
+    - name: Extract and process blacklists
+      run: |
+        echo "Extracting archive..."
+        tar -xzf temp/blacklists.tar.gz -C blacklists --strip-components=1
+        
+        echo "Processing domain files..."
+        processed_count=0
+        
+        for dir in blacklists/*/; do
+          if [[ -d "$dir" && -f "$dir/domains" ]]; then
+            category=$(basename "$dir")
+            domains_file="$dir/domains"
+            
+            # Skip empty files
+            if [[ ! -s "$domains_file" ]]; then
+              echo "⚠️  Skipping empty category: $category"
+              continue
+            fi
+            
+            echo "Processing category: $category"
+            
+            # Clean and validate domains before processing
+            grep -v '^#\|^$\|^\s*$' "$domains_file" | \
+            grep -E '^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$' | \
+            sort -u > "upload/$category"
+            
+            # Create hosts format version
+            awk '{print "0.0.0.0 " $0}' "upload/$category" > "upload/hosts-$category"
+            
+            ((processed_count++))
           fi
         done
+        
+        echo "✅ Processed $processed_count categories"
+        echo "PROCESSED_COUNT=$processed_count" >> $GITHUB_ENV
+        
+        if [[ $processed_count -eq 0 ]]; then
+          echo "❌ No valid blacklist categories found"
+          exit 1
+        fi
 
-    - name: Write update timestamp
+    - name: Generate metadata and statistics
       run: |
-        echo "Last updated: $(date -u '+%Y-%m-%d %H:%M:%SZ')" > last_updated.txt
+        echo "Generating metadata..."
+        
+        # Create summary file
+        cat > upload/README.md << EOF
+        # Blacklist Files
+        
+        Last updated: $TIMESTAMP
+        Source: $BLACKLIST_URL
+        Categories processed: $PROCESSED_COUNT
+        
+        ## File Formats
+        - \`category-name\`: Plain domain list (one domain per line)
+        - \`hosts-category-name\`: Hosts file format (0.0.0.0 domain)
+        
+        ## Categories
+        EOF
+        
+        # Add category statistics
+        for file in upload/*; do
+          if [[ -f "$file" && ! "$file" =~ (README\.md|stats\.json)$ ]]; then
+            filename=$(basename "$file")
+            count=$(wc -l < "$file")
+            echo "- **$filename**: $count domains" >> upload/README.md
+          fi
+        done
+        
+        # Create JSON stats
+        echo "{\"last_updated\":\"$TIMESTAMP\",\"categories\":$PROCESSED_COUNT,\"files\":[" > upload/stats.json
+        first=true
+        for file in upload/*; do
+          if [[ -f "$file" && ! "$file" =~ (README\.md|stats\.json)$ ]]; then
+            filename=$(basename "$file")
+            count=$(wc -l < "$file")
+            [[ $first == true ]] && first=false || echo "," >> upload/stats.json
+            echo -n "{\"name\":\"$filename\",\"domains\":$count}" >> upload/stats.json
+          fi
+        done
+        echo "]}" >> upload/stats.json
 
-    - name: Commit and push update timestamp
+    - name: Check for changes
+      id: changes
       run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add last_updated.txt
-        if ! git diff --cached --quiet; then
-          git commit -m "✅ Last updated: $(date +'%Y-%m-%d')"
-          git push origin HEAD
+        # Create a hash of all processed files
+        find upload -type f -name "*" -not -name "README.md" -not -name "stats.json" | \
+        sort | xargs cat | sha256sum | cut -d' ' -f1 > current_hash.txt
+        
+        # Compare with previous hash if it exists
+        if [[ -f previous_hash.txt ]]; then
+          if cmp -s current_hash.txt previous_hash.txt && [[ "${{ inputs.force_update }}" != "true" ]]; then
+            echo "No changes detected in blacklists"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected in blacklists"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
         else
-          echo "No changes to commit"
+          echo "First run or no previous hash found"
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+        fi
+        
+        cp current_hash.txt previous_hash.txt
+
+    - name: Update repository timestamp
+      if: steps.changes.outputs.has_changes == 'true'
+      run: |
+        echo "Last updated: $TIMESTAMP" > last_updated.txt
+        echo "Hash: $(cat current_hash.txt)" >> last_updated.txt
+
+    - name: Commit changes
+      if: steps.changes.outputs.has_changes == 'true'
+      run: |
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        
+        git add last_updated.txt previous_hash.txt
+        
+        if git diff --cached --quiet; then
+          echo "No repository changes to commit"
+        else
+          git commit -m "🔄 Blacklist sync - $TIMESTAMP
+          
+          - Processed $PROCESSED_COUNT categories
+          - Updated on $(date +'%Y-%m-%d at %H:%M UTC')
+          - Hash: $(cat current_hash.txt | cut -c1-8)"
+          
+          git push origin HEAD
+          echo "✅ Repository updated"
+        fi
+
+    - name: Delete existing release
+      if: steps.changes.outputs.has_changes == 'true'
+      continue-on-error: true
+      run: |
+        if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          gh release delete "$RELEASE_TAG" --yes
+          echo "Deleted existing release: $RELEASE_TAG"
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Generate release tag
-      id: tag
-      run: echo "TAG=blacklists-latest" >> $GITHUB_ENV && echo "blacklists-latest" > tag.txt
-
-    - name: Create GitHub Release and Upload Blacklist Files
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ env.TAG }}
-        name: "Blacklist Update ${{ env.TAG }}"
-        files: upload/*
+    - name: Create new release
+      if: steps.changes.outputs.has_changes == 'true'
+      run: |
+        release_body="# 🛡️ Blacklist Update
+        
+        **Updated:** $TIMESTAMP  
+        **Categories:** $PROCESSED_COUNT  
+        **Source:** [UT Capitole Blacklists]($BLACKLIST_URL)
+        
+        ## 📊 Statistics
+        $(cat upload/README.md | grep -A 100 "## Categories" | tail -n +2)
+        
+        ## 📁 Available Formats
+        - **Plain text**: Direct domain lists for custom applications
+        - **Hosts format**: Ready-to-use hosts file entries (prefixed with \`0.0.0.0\`)
+        
+        ## 🔄 Automation
+        This release is automatically updated every Sunday at midnight UTC when changes are detected.
+        "
+        
+        gh release create "$RELEASE_TAG" \
+          --title "🛡️ Blacklist Database - $(date -u '+%Y-%m-%d')" \
+          --notes "$release_body" \
+          --latest \
+          upload/*
+        
+        echo "✅ Release created successfully with $(ls upload/ | wc -l) files"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -rf temp/ blacklists/ current_hash.txt
+        echo "🧹 Cleanup completed"
+
+    - name: Summary
+      if: always()
+      run: |
+        echo "## 📋 Workflow Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: $([[ $? -eq 0 ]] && echo "✅ Success" || echo "❌ Failed")" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: $TIMESTAMP" >> $GITHUB_STEP_SUMMARY
+        echo "- **Categories Processed**: $PROCESSED_COUNT" >> $GITHUB_STEP_SUMMARY
+        echo "- **Changes Detected**: ${{ steps.changes.outputs.has_changes }}" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ steps.changes.outputs.has_changes }}" == "true" ]]; then
+          echo "- **Release**: [View Latest Release](https://github.com/${{ github.repository }}/releases/latest)" >> $GITHUB_STEP_SUMMARY
+        fi
