@@ -25,14 +25,21 @@ jobs:
       run: |
         mkdir -p blacklists
         tar -xzf blacklists.tar.gz -C blacklists --strip-components=1
-    - name: Flatten and rename domains files
+    - name: Flatten and rename domains files with www variants
       run: |
         mkdir -p upload
         for dir in blacklists/*; do
           if [ -d "$dir" ] && [ -f "$dir/domains" ]; then
             base=$(basename "$dir")
+            # Copy original domains file
             cp "$dir/domains" "upload/$base"
-            awk '{print "0.0.0.0 "$0}' "$dir/domains" > "upload/0-$base"
+            # Create hosts format with both original and www variants
+            awk '{
+              print "0.0.0.0 "$0
+              if ($0 !~ /^www\./) {
+                print "0.0.0.0 www."$0
+              }
+            }' "$dir/domains" > "upload/0-$base"
           fi
         done
     - name: Write update timestamp
