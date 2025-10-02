@@ -33,13 +33,20 @@ jobs:
             base=$(basename "$dir")
             # Copy original domains file
             cp "$dir/domains" "upload/$base"
-            # Create hosts format with both original and www variants
+            # Create hosts format with 0.0.0.0 prefix
             awk '{
               print "0.0.0.0 "$0
               if ($0 !~ /^www\./) {
                 print "0.0.0.0 www."$0
               }
             }' "$dir/domains" > "upload/0-$base"
+            # Create hosts format with 172.16.10.10 prefix
+            awk '{
+              print "172.16.10.10 "$0
+              if ($0 !~ /^www\./) {
+                print "172.16.10.10 www."$0
+              }
+            }' "$dir/domains" > "upload/172-$base"
           fi
         done
     - name: Write update timestamp

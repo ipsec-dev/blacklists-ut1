@@ -10,11 +10,12 @@ The workflow performs the following steps:
 
 1. **Download**: Retrieves the latest blacklists archive from UT Capitole
 2. **Extract**: Unpacks the downloaded archive
-3. **Process**: 
+3. **Process**:
    - Flattens domain lists from different categories
-   - Creates two versions of each list:
+   - Creates three versions of each list:
      - Raw domain list
      - Domain list prefixed with `0.0.0.0` for blocking
+     - Domain list prefixed with `172.16.10.10` for routing to specific IP
 4. **Release**: Uploads processed lists as a GitHub release
 
 ## Source
