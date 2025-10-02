@@ -2,7 +2,7 @@
 
 ## Overview
 
-This GitHub Actions workflow automatically downloads and releases domain blacklists from the University of Toulouse (UT) Capitole. 
+This GitHub Actions workflow automatically downloads and releases domain blacklists from the University of Toulouse (UT) Capitole.
 
 ## Workflow Details
 
@@ -20,7 +20,7 @@ The workflow performs the following steps:
 
 ## Source
 
-Blacklists are sourced from: https://dsi.ut-capitole.fr/blacklists/
+Blacklists are sourced from: <https://dsi.ut-capitole.fr/blacklists/>
 
 ## License
 
