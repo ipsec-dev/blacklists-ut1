@@ -2,7 +2,7 @@ name: Sync Blacklist
 
 on:
   schedule:
-    - cron: '0 0 * * 0' # Every Sunday at midnight
+    - cron: '0 0 1,15 * *' # Every 2 weeks (1st and 15th of each month)
   workflow_dispatch:
 
 jobs:
