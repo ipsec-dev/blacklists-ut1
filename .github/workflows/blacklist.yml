@@ -49,6 +49,37 @@ jobs:
             }' "$dir/domains" > "upload/172-$base"
           fi
         done
+    - name: Download previous lists from last release
+      run: |
+        mkdir -p prev
+        gh release download blacklists-latest --dir prev --pattern '[^01]*' || echo "No previous release"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build changelog
+      run: |
+        export LC_ALL=C
+        mkdir -p changes
+        if [ -z "$(ls prev)" ]; then echo "No previous lists, skipping changelog"; exit 0; fi
+        out="changes/$(date -u +%Y-%m-%d-%H%M).diff"
+        printf '## %s\n\n[Full diff](%s)\n\n| Category | Total | Added | Removed |\n|---|---:|---:|---:|\n' "$(date -u +%Y-%m-%d)" "$out" > entry.md
+        for dir in blacklists/*; do
+          base=$(basename "$dir")
+          # Symlinked categories (porn -> adult, ...) would duplicate their target
+          if [ -L "$dir" ] || [ ! -f "upload/$base" ]; then continue; fi
+          sort -u "upload/$base" > new.txt
+          if [ -f "prev/$base" ]; then sort -u "prev/$base" > old.txt; else : > old.txt; fi
+          comm -3 old.txt new.txt | sed 's/^\t/+/;t;s/^/-/' > cat.diff
+          if [ -s cat.diff ]; then
+            { echo "### $base"; cat cat.diff; } >> "$out"
+            echo "| $base | $(wc -l < new.txt) | +$(grep -c '^+' cat.diff || true) | -$(grep -c '^-' cat.diff || true) |" >> entry.md
+          fi
+        done
+        if [ -f "$out" ]; then
+          { head -n 2 CHANGELOG.md; cat entry.md; echo; tail -n +3 CHANGELOG.md; } > CHANGELOG.tmp
+          mv CHANGELOG.tmp CHANGELOG.md
+        fi
+
     - name: Write update timestamp
       run: |
         echo "Last updated: $(date -u '+%Y-%m-%d %H:%M:%SZ')" > last_updated.txt
@@ -56,7 +87,7 @@ jobs:
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add last_updated.txt
+        git add last_updated.txt CHANGELOG.md changes
         if ! git diff --cached --quiet; then
           git commit -m "✅ Last updated: $(date +'%Y-%m-%d')"
           git push origin HEAD

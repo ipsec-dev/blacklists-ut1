@@ -16,7 +16,8 @@ The workflow performs the following steps:
      - Raw domain list
      - Domain list prefixed with `0.0.0.0` for blocking
      - Domain list prefixed with `172.16.10.10` for routing to specific IP
-4. **Release**: Uploads processed lists as a GitHub release
+4. **Changelog**: Compares each list with the previous release and records added/removed domains per category in [CHANGELOG.md](CHANGELOG.md), with the full diff in `changes/`
+5. **Release**: Uploads processed lists as a GitHub release
 
 ## Source
 
