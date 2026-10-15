@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-15
+
+[Full diff](changes/2026-10-15-0317.diff)
+
+| Category | Total | Added | Removed |
+|---|---:|---:|---:|
+| adult | 4599280 | +0 | -1 |
+| dating | 10549 | +1519 | -0 |
+| gambling | 48714 | +10461 | -4 |
+| malware | 243972 | +8321 | -11614 |
+| phishing | 244099 | +7489 | -10103 |
+| shortener | 4562 | +2 | -0 |
+
 ## 2026-10-01
 
 [Full diff](changes/2026-10-01-0416.diff)
