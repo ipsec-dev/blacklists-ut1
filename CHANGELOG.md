@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-01
+
+[Full diff](changes/2026-11-01-0429.diff)
+
+| Category | Total | Added | Removed |
+|---|---:|---:|---:|
+| adult | 4599279 | +0 | -1 |
+| dating | 10565 | +16 | -0 |
+| drogue | 614 | +11 | -0 |
+| dynamic-dns | 2077 | +2 | -2 |
+| gambling | 95194 | +46487 | -7 |
+| malware | 247933 | +17979 | -14018 |
+| phishing | 247885 | +19360 | -15574 |
+| shortener | 4563 | +2 | -1 |
+| warez | 1554 | +9 | -1 |
+
 ## 2026-10-15
 
 [Full diff](changes/2026-10-15-0317.diff)
